@@ -21,7 +21,7 @@ using std::generate;
 using std::cout;
 using std::vector;
 
-#define TAMANHO_MEM_COMPARTILHADA 256
+#define TAMANHO_MEM_COMPARTILHADA 256 * 4
 
 __global__ void reducaoSoma(int *v, int *v_reduzido) {
 	// Aloca memória compartilhada para todos os kernels
@@ -32,8 +32,14 @@ __global__ void reducaoSoma(int *v, int *v_reduzido) {
 	// Cálculo do ID da thread
 	int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
-	// Carrega os primeiros elementos na memória compartilhada
-	somas_parciais[threadIdx.x] = v[tid];
+	// Na primeira iteração, fazemos o primeiro passo
+	// da redução. Calculamos um índice para além das threads,
+	// e somamos com o índice em THREAD_ID (tid)
+	int i = blockIdx.x * (blockDim.x * 2) + threadIdx.x;
+
+	// Carrega o vetor resultante da primeira iteração da redução
+	// na memória compartilhada.
+	somas_parciais[threadIdx.x] = v[i] + v[i + blockDim.x];
 	__syncthreads(); // -> Sincronização: Necessário para prosseguir!
 
 	// Vamos começar com um passo mais largo - 1/2 do tamanho do bloco
@@ -77,9 +83,10 @@ int main() {
 	// Tamanho do bloco em número de threads
 	const int TAMANHO_BLOCO = 256;
 
-	// Tamanho do grid em número de bloco
-    // (tamanho do array / número de threads por bloco)
-	int TAMANHO_GRID = N / TAMANHO_BLOCO;
+	// Tamanho do grid em número de blocos
+    // Vamos disparar somente metade do número de threads necessárias na primeira
+	// iteração para não termos threads ociosas.
+	int TAMANHO_GRID = N / TAMANHO_BLOCO / 2;
 
 	// Faz duas chamadas para o kernel
 	reducaoSoma<<<TAMANHO_GRID, TAMANHO_BLOCO>>>(device_arr, device_arr_reduzido);
